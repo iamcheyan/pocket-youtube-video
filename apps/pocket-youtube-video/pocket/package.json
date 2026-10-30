@@ -1,0 +1,8 @@
+{
+  "name": "pocket-youtube-video-pocket",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@pocketjs/framework": "0.15.0"
+  }
+}

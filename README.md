@@ -1,5 +1,12 @@
 # pocket-youtube-video
 
+
+> **PocketJS port (product target):** `apps/pocket-youtube-video/pocket/` is the
+> native PocketJS program (Solid TSX → `.pocket` → `pocket-linux-kms`). The
+> `frontend/` tree remains the frozen React design reference and is not
+> extended. Frames: `docs/pocket/`; verification:
+> `apps/pocket-youtube-video/POCKETJS-VERIFICATION.md`.
+
 An offline-first YouTube library as a PocketJS reference app: React + TypeScript + Vite UI,
 Go `videod` service, SQLite, yt-dlp and mpv. The browser only talks to videod.
 
