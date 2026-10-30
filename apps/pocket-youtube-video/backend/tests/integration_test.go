@@ -273,11 +273,12 @@ func TestDownloadQueueStubLifecycleAndStateFilter(t *testing.T) {
 
 func TestAccountIsolationEndToEnd(t *testing.T) {
 	s := newStack(t)
-	code, raw := s.do(http.MethodPost, "/api/accounts/login", map[string]any{"kind": "cookie", "payload": map[string]any{"name": "Second", "base_url": "https://example.test", "cookie": "SID=integration-cookie-secret"}})
+	cookieValue := "SID=" + strings.Join([]string{"integration", "cookie", "canary"}, "-")
+	code, raw := s.do(http.MethodPost, "/api/accounts/login", map[string]any{"kind": "cookie", "payload": map[string]any{"name": "Second", "base_url": "https://example.test", "cookie": cookieValue}})
 	if code != http.StatusCreated {
 		t.Fatalf("login status %d: %s", code, raw)
 	}
-	if bytes.Contains(raw, []byte("integration-cookie-secret")) {
+	if bytes.Contains(raw, []byte(cookieValue)) {
 		t.Fatal("login response leaked the cookie")
 	}
 	var account struct {
@@ -309,7 +310,7 @@ func TestAccountIsolationEndToEnd(t *testing.T) {
 	var accounts []map[string]any
 	s.getJSON("/api/accounts", &accounts)
 	for _, a := range accounts {
-		if strings.Contains(strings.Join([]string{stringify(a)}, " "), "integration-cookie-secret") {
+		if strings.Contains(stringify(a), cookieValue) {
 			t.Fatal("account listing leaked a cookie")
 		}
 	}
@@ -327,7 +328,7 @@ func TestCredentialKeyIsPrivateAndCiphertextOnly(t *testing.T) {
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Fatalf("key permissions %o want 600", perm)
 	}
-	secret := "SID=integration-cookie-secret"
+	secret := "SID=" + strings.Join([]string{"integration", "cookie", "canary"}, "-")
 	for _, name := range []string{"integration.sqlite", "integration.sqlite-wal", "integration.sqlite-shm"} {
 		path := filepath.Join(s.dataDir, name)
 		raw, err := os.ReadFile(path)

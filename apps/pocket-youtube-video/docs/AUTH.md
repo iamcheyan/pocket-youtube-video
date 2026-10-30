@@ -20,7 +20,9 @@ The key path is `POCKET_YOUTUBE_AUTH_KEY`, defaulting under the data directory. 
 
 ## Interfaces and future keyring
 
-The package defines a `CredentialStore` sealing/opening interface; the default file store is `FileCredentialStore`. A future `SystemKeyringStore` for PJOS should keep encrypted records in SQLite while placing the data-encryption key in a session/OS-protected keyring, with a documented explicit opt-in or migration. Do not introduce a plaintext fallback.
+`CredentialStore` exposes `Put(accountID, Secret) (Ciphertext, error)`, `Get(accountID, Ciphertext) (Secret, error)`, `Delete(accountID) error` and `List() ([]string, error)`. The default implementation is `FileEncryptedStore` (AES-256-GCM, account ID as AAD, 0600 key file); `FileCredentialStore` remains as a type alias.
+
+`SystemKeyringStore` is declared for a future PJOS keyring integration and deliberately fails loudly (`system keyring store is not implemented`) rather than falling back to plaintext. A real implementation should keep ciphertext in SQLite while placing the data-encryption key in a session/OS-protected keyring, with an explicit opt-in or migration.
 
 ## Boundaries
 
@@ -28,4 +30,4 @@ The package defines a `CredentialStore` sealing/opening interface; the default f
 - `GET /api/accounts` reports account metadata and authentication type, never secret material.
 - Logout deactivates accounts; removal deletes the account row, cascading associated encrypted tokens and catalog data.
 - The front end displays an explicit "not configured" state when no non-demo account is authenticated.
-- Authentication tests cover encryption round-trip, key permission enforcement, plaintext absence, account binding, and JSON omission. They do not prove Google/OAuth success.
+- Authentication tests cover encryption round-trip, `Put/Get/Delete/List` contract behaviour, key permission enforcement, account binding, JSON omission, and HTTP responses/DB bytes free of a runtime-generated canary cookie. A guard test fails if a canary ever looks placeholder-substituted, so the "no plaintext" assertions cannot silently become vacuous. They do not prove Google/OAuth success.

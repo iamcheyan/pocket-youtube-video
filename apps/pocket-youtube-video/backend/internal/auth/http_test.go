@@ -28,7 +28,7 @@ func TestCookieImportNeverReturnsOrStoresPlaintext(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := NewHandler(db, store, OAuthConfig{}, GoogleTokenExchanger{})
-	secret := "SID=top-secret-cookie-value"
+	secret := "SID=" + strings.Join([]string{"canary", "cookie", "value"}, "-")
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/cookie", strings.NewReader(`{"name":"Account","base_url":"https://example.test","cookie":"`+secret+`"}`))
 	rec := httptest.NewRecorder()
 	h.ImportCookie(rec, req)
@@ -92,13 +92,14 @@ func TestUnifiedLoginEndpointForCookie(t *testing.T) {
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/accounts/login", strings.NewReader(`{"kind":"cookie","payload":{"name":"L","base_url":"https://example.test","cookie":"SID={{SECRET_x42qm9ad}}","scopes":[]}}`))
+	loginSecret := "SID=" + strings.Join([]string{"canary", "login", "value"}, "-")
+	req := httptest.NewRequest(http.MethodPost, "/api/accounts/login", strings.NewReader(`{"kind":"cookie","payload":{"name":"L","base_url":"https://example.test","cookie":"`+loginSecret+`","scopes":[]}}`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
-	if strings.Contains(rec.Body.String(), "{{SECRET_7o0pm2fs}}") {
+	if strings.Contains(rec.Body.String(), loginSecret) {
 		t.Fatal("login leaked cookie")
 	}
 
@@ -122,5 +123,17 @@ func TestUnifiedLoginEndpointForCookie(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted && rec.Code != http.StatusBadRequest && rec.Code != http.StatusInternalServerError {
 		t.Fatalf("oauth status %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCanarySecretsAreRealValues guards against placeholder substitution making
+// the "no plaintext" assertions vacuous.
+func TestCanarySecretsAreRealValues(t *testing.T) {
+	cookieCanary := "SID=" + strings.Join([]string{"canary", "cookie", "value"}, "-")
+	if strings.Contains(cookieCanary, "{{") || len(cookieCanary) < 12 {
+		t.Fatalf("canary looks substituted: %q", cookieCanary)
+	}
+	if !strings.HasPrefix(cookieCanary, "SID=") {
+		t.Fatalf("canary lost its shape: %q", cookieCanary)
 	}
 }

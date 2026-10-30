@@ -27,7 +27,7 @@ func (s *EncryptedStore) CreateAccount(ctx context.Context, name, baseURL, authT
 		return "", errors.New("unable to create account")
 	}
 	accountID := base64.RawURLEncoding.EncodeToString(id)
-	ciphertext, err := s.Credentials.Seal(accountID, secret)
+	ciphertext, err := s.Credentials.Put(accountID, secret)
 	if err != nil {
 		return "", errors.New("unable to store credentials")
 	}

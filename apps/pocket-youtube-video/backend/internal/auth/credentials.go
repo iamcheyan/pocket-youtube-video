@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -22,13 +23,46 @@ type Ciphertext struct {
 	Nonce []byte
 	Data  []byte
 }
-type CredentialStore interface {
-	Seal(accountID string, secret Secret) (Ciphertext, error)
-	Open(accountID string, ciphertext Ciphertext) (Secret, error)
-}
-type FileCredentialStore struct{ aead cipher.AEAD }
 
-func NewFileCredentialStore(keyPath string) (*FileCredentialStore, error) {
+// CredentialStore is the encryption boundary for at-rest secrets. Ciphertext is
+// bound to its account ID; implementations must never return plaintext to callers
+// that only need metadata.
+type CredentialStore interface {
+	Put(accountID string, secret Secret) (Ciphertext, error)
+	Get(accountID string, ciphertext Ciphertext) (Secret, error)
+	Delete(accountID string) error
+	List() ([]string, error)
+}
+
+// FileEncryptedStore is the default CredentialStore: AES-256-GCM ciphertext with a
+// 0600 key file on local disk. It is local encryption, not an OS keyring.
+type FileEncryptedStore struct {
+	aead cipher.AEAD
+	keys []string
+	mu   sync.RWMutex
+}
+
+// FileCredentialStore is kept as an alias for the previous exported name.
+type FileCredentialStore = FileEncryptedStore
+
+// SystemKeyringStore is reserved for a PJOS keyring-backed implementation.
+// It is intentionally unimplemented rather than silently falling back to plaintext.
+type SystemKeyringStore struct{}
+
+func (SystemKeyringStore) Put(string, Secret) (Ciphertext, error) {
+	return Ciphertext{}, errors.New("system keyring store is not implemented")
+}
+func (SystemKeyringStore) Get(string, Ciphertext) (Secret, error) {
+	return Secret{}, errors.New("system keyring store is not implemented")
+}
+func (SystemKeyringStore) Delete(string) error {
+	return errors.New("system keyring store is not implemented")
+}
+func (SystemKeyringStore) List() ([]string, error) {
+	return nil, errors.New("system keyring store is not implemented")
+}
+
+func NewFileCredentialStore(keyPath string) (*FileEncryptedStore, error) {
 	if keyPath == "" {
 		keyPath = os.Getenv("POCKET_YOUTUBE_AUTH_KEY")
 	}
@@ -47,7 +81,7 @@ func NewFileCredentialStore(keyPath string) (*FileCredentialStore, error) {
 	if err != nil {
 		return nil, errors.New("unable to initialize credential encryption")
 	}
-	return &FileCredentialStore{aead: aead}, nil
+	return &FileEncryptedStore{aead: aead}, nil
 }
 func loadOrCreateKey(path string) ([]byte, error) {
 	if key, err := os.ReadFile(path); err == nil {
@@ -84,7 +118,7 @@ func loadOrCreateKey(path string) ([]byte, error) {
 	}
 	return key, nil
 }
-func (s *FileCredentialStore) Seal(id string, v Secret) (Ciphertext, error) {
+func (s *FileEncryptedStore) Put(id string, v Secret) (Ciphertext, error) {
 	p := encodeSecret(v)
 	nonce := make([]byte, s.aead.NonceSize())
 	if _, e := io.ReadFull(rand.Reader, nonce); e != nil {
@@ -92,10 +126,47 @@ func (s *FileCredentialStore) Seal(id string, v Secret) (Ciphertext, error) {
 		return Ciphertext{}, errors.New("unable to encrypt credentials")
 	}
 	data := s.aead.Seal(nil, nonce, p, []byte(id))
+	s.track(id)
 	clear(p)
 	return Ciphertext{Nonce: nonce, Data: data}, nil
 }
-func (s *FileCredentialStore) Open(id string, c Ciphertext) (Secret, error) {
+
+// Delete removes the account from the in-memory index. Ciphertext lives in SQLite,
+// so the caller deletes the row; this clears any cached key material reference.
+func (s *FileEncryptedStore) Delete(accountID string) error {
+	if accountID == "" {
+		return errors.New("invalid account id")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, k := range s.keys {
+		if k == accountID {
+			s.keys = append(s.keys[:i], s.keys[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
+// List returns the account IDs this store has issued ciphertext for in-process.
+func (s *FileEncryptedStore) List() ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), s.keys...), nil
+}
+
+func (s *FileEncryptedStore) track(accountID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, k := range s.keys {
+		if k == accountID {
+			return
+		}
+	}
+	s.keys = append(s.keys, accountID)
+}
+
+func (s *FileEncryptedStore) Get(id string, c Ciphertext) (Secret, error) {
 	p, e := s.aead.Open(nil, c.Nonce, c.Data, []byte(id))
 	if e != nil {
 		return Secret{}, errors.New("unable to decrypt credentials")
