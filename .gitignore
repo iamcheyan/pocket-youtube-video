@@ -1,0 +1,13 @@
+# build outputs
+apps/pocket-youtube-video/backend/videod
+apps/pocket-youtube-video/frontend/dist/
+apps/pocket-youtube-video/frontend/node_modules/
+*.tsbuildinfo
+# local runtime data and private credentials
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+credential.key
+downloads/
+# platform noise
+.DS_Store
