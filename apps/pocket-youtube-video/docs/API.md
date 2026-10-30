@@ -13,24 +13,26 @@ Base path: `/api`. Requests and responses use JSON, except `/api/media/{video_id
 
 - `GET /home` returns home sections.
 - `GET /subscriptions?page=1`, `GET /channels?q=`, `GET /channels/{id}`.
-- `GET /playlists?q=` (video counts and metadata). A dedicated `/api/playlists/{id}` detail/CRUD/import route is not implemented.
+- `GET /playlists?q=` (list with counts), `POST /playlists` `{title,description}` (creates a `user-…` playlist).
+- `GET /playlists/{id}` returns the playlist with ordered `videos`; `POST /playlists/{id}` `{video_id}` adds a video; `DELETE /playlists/{id}/videos/{video_id}` removes one; `DELETE /playlists/{id}` deletes a user playlist. Synced (`playlist-NN`) playlists are read-only and return 409 on mutation.
 - `GET /videos/{id}`.
 - `GET /search?q=&type=video|channel|playlist|library` (default `video`). Each item carries `type` plus id/title; `library` searches only completed downloads with a local file. An unknown type returns 400 `invalid_search_type`.
-- `GET /history`, `POST /history/progress` with `{video_id,position_sec,duration_sec}`.
+- `GET /history` returns each entry with `position_sec`, `watched_sec`, `duration_sec` and `completion_percent`.
+- `POST /history` or `POST /history/progress` writes `{video_id,position_sec,duration_sec}` (204). `DELETE /history` clears all; `DELETE /history/{video_id}` removes one entry.
 - `GET /watch_later`, `POST /watch_later/{video_id}`, `DELETE /watch_later/{video_id}`.
 - Favorites use corresponding `/favorites` routes.
 - `POST /sync` accepts `{what:subscriptions|playlists|watch_later|all}`.
 
 ## Downloads and media
 
-- `POST /downloads` accepts `{video_id,mode,quality,audio_bitrate,priority}` or an explicit URL for engine testing.
+- `POST /downloads` accepts `{video_id,mode,quality,audio_bitrate,priority}`, an explicit `url`, or `{video_ids:[...]}` for batch queueing (returns `{queued,results[]}` with per-video errors).
 - `GET /downloads?state=` polls jobs. `POST /downloads/{id}/pause|resume|retry|cancel`; `PUT /downloads/order` reorders jobs.
 - `GET /library?q=&sort=&filter=`, `DELETE /library/{video_id}`.
 - `GET /media/{video_id}` streams stored bytes with Range support.
-- `POST /player/play|pause|stop|seek|volume|speed|fullscreen`; `GET /player/state`.
+- `POST /player/play|pause|stop|seek|volume|speed|fullscreen`; `GET /player/state`. `play` accepts `{video_id,url}` and starts mpv at the stored history position, returning `resume_sec`.
 
 ## Settings
 
 `GET /settings`, `PUT /settings` persist UI language/theme/profile/DPI and media preferences (`download_dir`, `library_dir`, `subtitle_language`, `default_quality`, `storage_limit_gb`, `concurrency`) per account. GET includes defaults; PUT rejects unknown keys, invalid enums/ranges and directory values containing `..`.
 
-Long operations are polled; no SSE endpoint is exposed.
+Long operations are polled; no SSE endpoint is exposed. The UI polls `/api/player/state` while a video is open and writes progress back every 5 seconds.

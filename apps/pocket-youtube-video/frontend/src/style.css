@@ -24,3 +24,7 @@
 .setting-field:last-child{border-bottom:0}
 .setting-field span{color:var(--muted);font-size:.85rem}
 .setting-field select,.setting-field input{background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 9px;max-width:58%}
+.playlist-create{display:flex;gap:8px;align-items:center}
+.playlist-create input{background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:200px}
+.playlist-card{text-align:left}
+.playlist-kind{display:block;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-size:.62rem;margin-top:4px}

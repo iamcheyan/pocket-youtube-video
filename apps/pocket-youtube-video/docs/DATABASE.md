@@ -6,7 +6,7 @@
 
 `accounts`, `oauth_tokens`, `channels`, `videos`, `playlists`, `playlist_videos`, `downloads`, `watch_later`, `favorites`, `history`, `settings`, and FTS5 `video_search`.
 
-Catalog, history, watch later, favorites and settings are keyed or queried by account. Deleting an account cascades catalog and encrypted token rows. Search uses FTS5. History stores playback position and last watch time. Download rows store format choices, state, progress, output path and account/video identity.
+Catalog, history, watch later, favorites and settings are keyed or queried by account. Deleting an account cascades catalog and encrypted token rows. Search uses FTS5. History stores playback position (REAL), the larger of media/video duration, last watch time and is used for resume and completion percentage. Existing databases get the `history.duration` column via an idempotent `ALTER TABLE` migration. Download rows store format choices, state, progress, output path and account/video identity.
 
 ## Credentials
 
