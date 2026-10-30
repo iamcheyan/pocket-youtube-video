@@ -1,10 +1,10 @@
 # Screenshots
 
-All images were captured from the running Vite application (`http://127.0.0.1:5200`) backed by the live `videod` instance (`http://127.0.0.1:18802`), using headless Chromium through the browser automation target with `page.setViewport` and `page.screenshot`. They are not placeholder images, screenshots of a different project, or copied images.
+All images were captured from the running Vite application (`http://127.0.0.1:5202`) backed by the live `videod` instance (`http://127.0.0.1:18803`), using headless Chromium through the browser automation target with `page.setViewport` and `page.screenshot`. They are not placeholder images, screenshots of a different project, or copied images.
 
-Capture requirements: `POCKET_YOUTUBE_API=http://127.0.0.1:18802 npx vite --host 127.0.0.1 --port 5200 --strictPort`, then a headless Chromium navigation to the corresponding URL followed by `page.screenshot({path})`. The URL carries theme/language/profile/DPI (`?theme=dark&lang=en&profile=desktop&scale=100#home`), so each capture is reproducible. Data loads from the live seeded SQLite DB.
+Capture requirements: `POCKET_YOUTUBE_API=http://127.0.0.1:18803 npx vite --host 127.0.0.1 --port 5202 --strictPort`, then a headless Chromium navigation to the corresponding URL followed by `page.screenshot({path})`. The URL carries theme/language/profile/DPI (`?theme=dark&lang=en&profile=desktop&scale=100#home`), so each capture is reproducible. Data loads from the live seeded SQLite DB.
 
-Verification: all 28 PNGs were checked by reading the PNG IHDR (`width`, `height`), and SHA-256 hashes were compared. Result: **28 files / 28 unique hashes**. Any capture sharing the exact configuration and page state with another was omitted rather than saved as a duplicate; e.g. `home.png` is the en / DPI 100 / 1280×720 dark Home capture; the separate 1280×720 viewport capture uses the Downloads page to avoid identical bytes.
+Verification: all 30 PNGs were checked by reading the PNG IHDR (`width`, `height`), and SHA-256 hashes were compared. Result: **30 files / 30 unique hashes**. Any capture sharing the exact configuration and page state with another was omitted rather than saved as a duplicate; e.g. `home.png` is the en / DPI 100 / 1280×720 dark Home capture; the separate 1280×720 viewport capture uses the Downloads page to avoid identical bytes.
 
 | File | Dimensions | Theme | View / profile | Description |
 |---|---|---|---|---|
@@ -34,5 +34,7 @@ Verification: all 28 PNGs were checked by reading the PNG IHDR (`width`, `height
 | `viewport-1920x1080.png` | 1920×1080 | Dark | Home / Desktop | 1920×1080 layout. |
 | `viewport-320x240.png` | 320×240 | Dark | Home / Desktop | 320×240 responsive layout. |
 | `viewport-480x320.png` | 480×320 | Dark | Home / Desktop | 480×320 responsive layout. |
+| `viewport-640x480.png` | 640×480 | Dark | Home / Desktop | Mid-size viewport from the required matrix. |
+| `profile-dap.png` | 480×320 | Dark | Home / DAP | DAP device profile: 200px rail, denser 16:10 cards, compact rows. |
 | `viewport-720x720.png` | 720×720 | Dark | Home / Desktop | 720×720 layout. |
 | `watch-later.png` | 1280×720 | Dark | Watch later / Desktop | Seeded watch-later entries. |

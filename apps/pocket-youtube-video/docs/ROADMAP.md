@@ -12,6 +12,9 @@
 - History: per-video progress, watched seconds and completion percentage; playback resumes from the stored position.
 - Playlists: detail with ordered videos, user-created playlists (add/remove/delete) and read-only synced playlists.
 - Downloads: single or batch queueing with per-item failure reporting; writes are serialized to avoid SQLite busy errors.
+- Versioned schema migrations with `schema_migrations`, an in-place legacy upgrade path and `schema_version` in health.
+- Black-box integration suite in `backend/tests` (wired into `make test`) covering health, seed totals, stub-download lifecycle, state filtering, account isolation, credential file permissions, media/library, typed search, playlist/settings validation and error envelopes.
+- Device profiles: Desktop, TV, Handheld, DAP and Compact, each with distinct density/navigation CSS; narrow viewports use a working drawer that closes after navigation.
 - React/Vite UI: home/subscriptions/channels/playlists/video detail/downloads/watch later/history/library/search/settings/accounts; Light/Dark/OLED/System themes; en/zh-CN/ja; desktop/TV/handheld profiles; 100–300% DPI; keyboard D-pad focus and Gamepad polling. 27 real Chromium screenshots cover pages, themes, viewports, profiles, locales and DPI.
 
 ## Limited or unverified
@@ -21,6 +24,8 @@
 - Provider playlist import and playlist reordering are not implemented; local create/detail/add/remove works.
 - Resume is passed to mpv as `--start`; position polling is 5 s, so a crash can lose up to 5 s of progress.
 - `.pj` packaging and having `videod` serve the built front-end assets are not implemented; Vite proxies `/api` in development.
+- `POST /api/sync` does not reach a provider: without authenticated credentials it refreshes local timestamps and reports `provider_sync: not_configured`.
+- Playlist import from a provider and in-playlist reordering are not implemented.
 - The seeded `completed` download fixtures intentionally have no media files and are not listed in the offline library.
 - No SSE endpoint; long operations are polled.
 

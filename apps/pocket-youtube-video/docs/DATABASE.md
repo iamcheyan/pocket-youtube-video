@@ -1,6 +1,10 @@
 # Database
 
-`videod` uses SQLite through `modernc.org/sqlite`, a pure Go driver. Startup creates the schema idempotently. Foreign keys are enabled on the database connection. The schema is currently initialized by `internal/store.Migrate`; schema version tracking/migration history remains to be added.
+`videod` uses SQLite through `modernc.org/sqlite`, a pure Go driver. Connections use WAL, `busy_timeout=5000` and foreign keys.
+
+Schema changes are versioned: `internal/store/migrate.go` holds an append-only migration list, applied inside a transaction and recorded in `schema_migrations(version,name,applied_at)`. `store.SchemaVersion` is the version this build expects and `GET /api/health` reports the applied `schema_version`. Restarting is a no-op; an older database is upgraded in place (verified by a legacy-DB test).
+
+Current migrations: `1` core schema (accounts, tokens, catalogue, playlists, downloads, watch later, history, settings, FTS5 search + triggers), `2` `history.duration`, `3` `synced_at` on channels/playlists and `settings.updated_at`.
 
 ## Core tables
 

@@ -8,7 +8,9 @@ React/Vite UI → videod REST API → SQLite / credential store / yt-dlp / mpv
 
 ## Runtime
 
-`backend/cmd/videod` initializes the user data directory, encrypted credential key, SQLite schema and deterministic demo seed, then mounts catalog, auth and media handlers. `frontend` is served by Vite in development; production assets can be reverse-proxied by videod or packaged into a `.pj` runtime later. That static serving integration is not implemented yet.
+`backend/cmd/videod` initializes the user data directory, encrypted credential key, versioned SQLite schema (see `internal/store/migrate.go`) and deterministic demo seed, then mounts catalog, auth and media handlers. `frontend` is served by Vite in development; production assets can be reverse-proxied by videod or packaged into a `.pj` runtime later. That static serving integration is not implemented yet.
+
+Black-box HTTP integration tests live in `backend/tests` (Go's `internal/` rule keeps them inside the module) and run from `make test`; `apps/pocket-youtube-video/tests/README.md` points at them.
 
 The backend packages are divided into `internal/api` (catalog and account data), `internal/store` (SQLite schema/seed), `internal/auth` (PKCE, cookie import and AES-GCM), `internal/provider` (provider contract and mock/YouTube adapters), and `internal/media` (downloads, player, library).
 
