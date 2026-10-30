@@ -2,7 +2,7 @@
 
 All images were captured from the running Vite application (`http://127.0.0.1:5202`) backed by the live `videod` instance (`http://127.0.0.1:18803`), using headless Chromium through the browser automation target with `page.setViewport` and `page.screenshot`. They are not placeholder images, screenshots of a different project, or copied images.
 
-Capture requirements: `POCKET_YOUTUBE_API=http://127.0.0.1:18803 npx vite --host 127.0.0.1 --port 5202 --strictPort`, then a headless Chromium navigation to the corresponding URL followed by `page.screenshot({path})`. The URL carries theme/language/profile/DPI (`?theme=dark&lang=en&profile=desktop&scale=100#home`), so each capture is reproducible. Data loads from the live seeded SQLite DB.
+Reproduce: `make build`, start `videod` on 127.0.0.1:8732 and `POCKET_YOUTUBE_API=http://127.0.0.1:8732 npx vite --host 127.0.0.1 --port 5202 --strictPort`, then `make screenshots`. The script aborts on duplicate hashes, wrong PNG size, horizontal overflow, an unrendered heading, or any console/HTTP error, and rewrites `manifest.json` with the run timestamp. The URL carries theme/language/profile/DPI (`?theme=dark&lang=en&profile=desktop&scale=100#home`), so each capture is reproducible. Data loads from the live seeded SQLite DB.
 
 Verification: all 30 PNGs were checked by reading the PNG IHDR (`width`, `height`), and SHA-256 hashes were compared. Result: **30 files / 30 unique hashes**. Any capture sharing the exact configuration and page state with another was omitted rather than saved as a duplicate; e.g. `home.png` is the en / DPI 100 / 1280×720 dark Home capture; the separate 1280×720 viewport capture uses the Downloads page to avoid identical bytes.
 

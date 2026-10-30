@@ -2,7 +2,7 @@ APP := apps/pocket-youtube-video
 BACKEND := $(APP)/backend
 FRONTEND := $(APP)/frontend
 
-.PHONY: build test test-unit test-integration dev frontend-deps clean
+.PHONY: build test test-unit test-integration dev frontend-deps screenshots verify-screenshots clean
 
 build: frontend-deps
 	cd $(BACKEND) && go build ./cmd/videod
@@ -20,6 +20,13 @@ test-integration:
 
 frontend-deps:
 	cd $(FRONTEND) && npm install --no-audit --no-fund
+
+screenshots:
+	node $(APP)/scripts/capture-screenshots.mjs
+
+# Re-check the committed matrix without overwriting it.
+verify-screenshots:
+	node $(APP)/scripts/capture-screenshots.mjs --verify-only
 
 dev:
 	@set -eu; trap 'kill 0' INT TERM EXIT; \
