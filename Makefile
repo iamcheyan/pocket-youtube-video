@@ -2,7 +2,7 @@ APP := apps/pocket-youtube-video
 BACKEND := $(APP)/backend
 FRONTEND := $(APP)/frontend
 
-.PHONY: build test dev frontend-deps clean
+.PHONY: build test test-unit test-integration dev frontend-deps clean
 
 build: frontend-deps
 	cd $(BACKEND) && go build ./cmd/videod
@@ -10,6 +10,13 @@ build: frontend-deps
 
 test:
 	cd $(BACKEND) && go test ./...
+	cd $(BACKEND) && go test ./tests -count=1 -v 2>&1 | grep -E '^(=== RUN|--- PASS|--- FAIL|PASS|FAIL|ok)' 
+
+test-unit:
+	cd $(BACKEND) && go test ./...
+
+test-integration:
+	cd $(BACKEND) && go test ./tests -count=1 -v
 
 frontend-deps:
 	cd $(FRONTEND) && npm install --no-audit --no-fund
