@@ -71,7 +71,7 @@ func (s *Service) settings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case "profile":
-			if !oneOf(v, "desktop", "tv", "handheld", "compact") {
+			if !oneOf(v, "desktop", "tv", "handheld", "dap", "compact") {
 				apiError(w, 400, "invalid_setting", "unsupported profile")
 				return
 			}

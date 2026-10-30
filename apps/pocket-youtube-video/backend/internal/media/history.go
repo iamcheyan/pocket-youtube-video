@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/iamcheyan/pocket-youtube-video/apps/pocket-youtube-video/backend/internal/store"
@@ -96,10 +97,11 @@ func (s *Service) history(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) historyEntries(r *http.Request, account string) ([]historyEntry, error) {
+	limit, offset := pageParams(r)
 	rows, err := s.db.QueryContext(r.Context(), `SELECT h.video_id,h.watched_at,h.position,v.title,v.channel_id,v.thumbnail,
 		CASE WHEN h.duration>0 THEN h.duration ELSE v.duration END
 		FROM history h JOIN videos v ON v.id=h.video_id AND v.account_id=h.account_id
-		WHERE h.account_id=? ORDER BY h.watched_at DESC, h.video_id`, account)
+		WHERE h.account_id=? ORDER BY h.watched_at DESC, h.video_id LIMIT ? OFFSET ?`, account, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +126,19 @@ func (s *Service) historyEntries(r *http.Request, account string) ([]historyEntr
 		out = append(out, x)
 	}
 	return out, rows.Err()
+}
+
+// pageParams mirrors the catalogue paging contract: default 20, max 100.
+func pageParams(r *http.Request) (int, int) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
 }
 
 // resumePosition returns the stored position for a video, or zero.

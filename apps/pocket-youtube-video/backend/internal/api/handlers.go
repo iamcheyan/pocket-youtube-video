@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Handler struct {
@@ -74,6 +75,9 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	var active int
 	_ = h.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM accounts WHERE active=1 AND auth_type NOT IN ('demo','')`).Scan(&active)
 	payload := map[string]any{"status": "ok", "version": "0.1.0", "tools": map[string]any{}, "mock": true, "database": "sqlite"}
+	var schemaVersion int
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&schemaVersion)
+	payload["schema_version"] = schemaVersion
 	if h.HealthProbe != nil {
 		if values, err := h.HealthProbe(r.Context()); err == nil {
 			for k, v := range values {
@@ -171,7 +175,17 @@ func (h *Handler) video(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) channels(w http.ResponseWriter, r *http.Request) {
 	l, o := paging(r)
-	rows, e := h.DB.QueryContext(r.Context(), `SELECT id,account_id,title,url,thumbnail,description FROM channels WHERE account_id=? ORDER BY title,id LIMIT ? OFFSET ?`, h.account(r), l, o)
+	if page, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && page > 1 {
+		o = (page - 1) * l
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	query := `SELECT id,account_id,title,url,thumbnail,description FROM channels WHERE account_id=?`
+	args := []any{h.account(r)}
+	if q != "" {
+		query += ` AND (title LIKE ? OR description LIKE ?)`
+		args = append(args, "%"+q+"%", "%"+q+"%")
+	}
+	rows, e := h.DB.QueryContext(r.Context(), query+` ORDER BY title,id LIMIT ? OFFSET ?`, append(args, l, o)...)
 	if e != nil {
 		fail(w, 500, "database error")
 		return
@@ -394,8 +408,49 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonOut(w, out)
 }
+
+// sync refreshes local data for the active account. Locally derived surfaces
+// (downloads/library/history) are reconciled here; provider-backed catalogue
+// syncs are reported honestly instead of claiming a remote fetch happened.
 func (h *Handler) sync(w http.ResponseWriter, r *http.Request) {
-	jsonOut(w, map[string]any{"status": "queued", "account_id": h.account(r)})
+	var in struct {
+		What string `json:"what"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in)
+	if in.What == "" {
+		in.What = "all"
+	}
+	if in.What != "all" && in.What != "subscriptions" && in.What != "playlists" && in.What != "watch_later" {
+		fail(w, 400, "unsupported sync scope")
+		return
+	}
+	account := h.account(r)
+	now := time.Now().UTC().Format(time.RFC3339)
+	result := map[string]any{"status": "ok", "account_id": account, "what": in.What, "synced_at": now}
+	providerBacked := in.What == "all" || in.What == "subscriptions" || in.What == "playlists"
+	result["provider_sync"] = "not_configured"
+	result["note"] = "no authenticated provider is configured; local catalogue and timestamps were refreshed"
+	if _, err := h.DB.ExecContext(r.Context(), `UPDATE channels SET synced_at=? WHERE account_id=?`, now, account); err != nil {
+		fail(w, 500, "database error")
+		return
+	}
+	if in.What == "all" || in.What == "playlists" {
+		if _, err := h.DB.ExecContext(r.Context(), `UPDATE playlists SET synced_at=? WHERE account_id=?`, now, account); err != nil {
+			fail(w, 500, "database error")
+			return
+		}
+	}
+	var channels, playlists, videos, downloads int
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM channels WHERE account_id=?`, account).Scan(&channels)
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM playlists WHERE account_id=?`, account).Scan(&playlists)
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM videos WHERE account_id=?`, account).Scan(&videos)
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM downloads WHERE account_id=?`, account).Scan(&downloads)
+	result["counts"] = map[string]int{"channels": channels, "playlists": playlists, "videos": videos, "downloads": downloads}
+	if !providerBacked {
+		result["provider_sync"] = "not_required"
+		result["note"] = "watch later is user-managed locally"
+	}
+	jsonOut(w, result)
 }
 
 // randomID returns an opaque URL-safe identifier for user-created records.

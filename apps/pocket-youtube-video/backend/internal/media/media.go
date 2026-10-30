@@ -164,7 +164,19 @@ func (s *Service) downloads(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		rows, err := s.db.QueryContext(r.Context(), `SELECT id,account_id,video_id,url,mode,quality,audio_bitrate,priority,state,progress,error,output_path FROM downloads WHERE account_id=? ORDER BY priority DESC,created_at,id`, account)
+		stateFilter := strings.TrimSpace(r.URL.Query().Get("state"))
+		if stateFilter != "" && !oneOf(stateFilter, "queued", "downloading", "paused", "completed", "failed", "cancelled") {
+			apiError(w, 400, "invalid_state", "unsupported download state")
+			return
+		}
+		query := `SELECT id,account_id,video_id,url,mode,quality,audio_bitrate,priority,state,progress,error,output_path FROM downloads WHERE account_id=?`
+		args := []any{account}
+		if stateFilter != "" {
+			query += ` AND state=?`
+			args = append(args, stateFilter)
+		}
+		limit, offset := pageParams(r)
+		rows, err := s.db.QueryContext(r.Context(), query+` ORDER BY priority DESC,created_at,id LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 		if err != nil {
 			apiError(w, 500, "database_error", "unable to read downloads")
 			return

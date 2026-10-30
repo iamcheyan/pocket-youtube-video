@@ -305,3 +305,60 @@ func TestBatchDownloadQueuesEachVideo(t *testing.T) {
 		t.Fatalf("persisted downloads=%d want 2", count)
 	}
 }
+
+func TestDownloadStateFilterAndInvalidState(t *testing.T) {
+	s, db, _ := engineFixture(t, "#!/bin/sh\nexit 0\n")
+	if _, err := db.Exec(`INSERT INTO downloads(account_id,video_id,url,mode,quality,audio_bitrate,priority,state) VALUES
+		('demo','video-0301','https://example.invalid/a','video','720p','192',1,'queued'),
+		('demo','video-0302','https://example.invalid/b','video','720p','192',1,'completed'),
+		('demo','video-0303','https://example.invalid/c','video','720p','192',1,'failed');`); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, s)
+	for state, want := range map[string]int{"queued": 1, "completed": 1, "failed": 1, "paused": 0} {
+		req := httptest.NewRequest(http.MethodGet, "/api/downloads?state="+state, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status %d", state, rec.Code)
+		}
+		var items []map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != want {
+			t.Fatalf("state=%s got %d want %d", state, len(items), want)
+		}
+		for _, item := range items {
+			if item["state"] != state {
+				t.Fatalf("filter leaked %v", item["state"])
+			}
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/downloads?state=bogus", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid state status %d", rec.Code)
+	}
+}
+
+func TestDAPProfileIsAccepted(t *testing.T) {
+	s, _, _ := engineFixture(t, "#!/bin/sh\nexit 0\n")
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, s)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"profile":"dap"}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dap profile rejected: %d %s", rec.Code, rec.Body.String())
+	}
+	var stored string
+	if err := s.db.QueryRow(`SELECT value FROM settings WHERE account_id='demo' AND key='profile'`).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != "dap" {
+		t.Fatalf("profile=%q", stored)
+	}
+}
