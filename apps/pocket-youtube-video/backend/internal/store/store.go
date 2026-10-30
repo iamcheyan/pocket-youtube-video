@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	_ "modernc.org/sqlite"
+	"strings"
 	"time"
 )
 
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS playlists(id TEXT PRIMARY KEY,account_id TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS playlist_videos(playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,position INTEGER NOT NULL,PRIMARY KEY(playlist_id,video_id));
 CREATE TABLE IF NOT EXISTS watch_later(account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,added_at TEXT NOT NULL,PRIMARY KEY(account_id,video_id));
 CREATE TABLE IF NOT EXISTS favorites(account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,added_at TEXT NOT NULL,PRIMARY KEY(account_id,video_id));
-CREATE TABLE IF NOT EXISTS history(account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,watched_at TEXT NOT NULL,position INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(account_id,video_id));
+CREATE TABLE IF NOT EXISTS history(account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,watched_at TEXT NOT NULL,position REAL NOT NULL DEFAULT 0,duration REAL NOT NULL DEFAULT 0,PRIMARY KEY(account_id,video_id));
 CREATE TABLE IF NOT EXISTS settings(account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,key TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(account_id,key));
 CREATE VIRTUAL TABLE IF NOT EXISTS video_search USING fts5(video_id UNINDEXED,account_id UNINDEXED,title,description,channel_title);
 CREATE TRIGGER IF NOT EXISTS videos_search_insert AFTER INSERT ON videos BEGIN INSERT INTO video_search(video_id,account_id,title,description,channel_title) SELECT NEW.id,NEW.account_id,NEW.title,NEW.description,title FROM channels WHERE id=NEW.channel_id; END;
@@ -40,8 +41,14 @@ func Open(path string) (*sql.DB, error) {
 	return db, nil
 }
 func Migrate(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, schema)
-	return err
+	if _, err := db.ExecContext(ctx, schema); err != nil {
+		return err
+	}
+	// Older databases predate history.duration; add it in place.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE history ADD COLUMN duration REAL NOT NULL DEFAULT 0`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return err
+	}
+	return nil
 }
 func Seed(ctx context.Context, db *sql.DB) error {
 	tx, err := db.BeginTx(ctx, nil)

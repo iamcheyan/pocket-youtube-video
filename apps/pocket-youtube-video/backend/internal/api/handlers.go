@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"github.com/iamcheyan/pocket-youtube-video/apps/pocket-youtube-video/backend/internal/store"
@@ -28,12 +30,14 @@ func (h *Handler) Register(m *http.ServeMux) {
 	m.HandleFunc("GET /api/channels/{id}", h.channel)
 	m.HandleFunc("GET /api/videos", h.videos)
 	m.HandleFunc("GET /api/videos/{id}", h.video)
-	m.HandleFunc("GET /api/playlists", h.playlists)
+	m.HandleFunc("GET /api/playlists", h.playlistCollection)
+	m.HandleFunc("POST /api/playlists", h.playlistCollection)
+	m.HandleFunc("GET /api/playlists/{id}", h.playlistDetail)
+	m.HandleFunc("POST /api/playlists/{id}", h.playlistDetail)
+	m.HandleFunc("DELETE /api/playlists/{id}", h.playlistDetail)
+	m.HandleFunc("DELETE /api/playlists/{id}/videos/{video_id}", h.playlistVideoDelete)
 	m.HandleFunc("GET /api/home", h.home)
 	m.HandleFunc("GET /api/subscriptions", h.channels)
-	m.HandleFunc("GET /api/history", h.listVideos("history"))
-	m.HandleFunc("POST /api/history/{id}", h.historyAdd)
-	m.HandleFunc("DELETE /api/history/{id}", h.historyDelete)
 	m.HandleFunc("GET /api/watch_later", h.listVideos("watch_later"))
 	m.HandleFunc("POST /api/watch_later/{id}", h.watchLaterAdd)
 	m.HandleFunc("DELETE /api/watch_later/{id}", h.watchLaterDelete)
@@ -308,29 +312,6 @@ func (h *Handler) favoriteAdd(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) favoriteDelete(w http.ResponseWriter, r *http.Request) {
 	h.mutate("favorites", false)(w, r)
 }
-func (h *Handler) historyAdd(w http.ResponseWriter, r *http.Request) {
-	a, id := h.account(r), r.PathValue("id")
-	res, e := h.DB.ExecContext(r.Context(), `INSERT INTO history(account_id,video_id,watched_at,position) SELECT ?,id,datetime('now'),0 FROM videos WHERE account_id=? AND id=? ON CONFLICT(account_id,video_id) DO UPDATE SET watched_at=datetime('now')`, a, a, id)
-	if e != nil {
-		fail(w, 500, "database error")
-		return
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		fail(w, 404, "video not found")
-		return
-	}
-	w.WriteHeader(201)
-	jsonOut(w, map[string]bool{"ok": true})
-}
-func (h *Handler) historyDelete(w http.ResponseWriter, r *http.Request) {
-	_, e := h.DB.ExecContext(r.Context(), `DELETE FROM history WHERE account_id=? AND video_id=?`, h.account(r), r.PathValue("id"))
-	if e != nil {
-		fail(w, 500, "database error")
-		return
-	}
-	w.WriteHeader(204)
-}
 func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	kind := r.URL.Query().Get("type")
@@ -415,4 +396,13 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) sync(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, map[string]any{"status": "queued", "account_id": h.account(r)})
+}
+
+// randomID returns an opaque URL-safe identifier for user-created records.
+func randomID() string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "fallback"
+	}
+	return base64.RawURLEncoding.EncodeToString(b[:])
 }
