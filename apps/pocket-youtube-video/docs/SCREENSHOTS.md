@@ -1,8 +1,8 @@
 # Screenshots
 
-All images were captured from the running Vite application (`http://127.0.0.1:5198`) backed by the live `videod` instance (`http://127.0.0.1:18763`), using headless Chromium through the browser automation target with `page.setViewport` and `page.screenshot`. They are not placeholder images, screenshots of a different project, or copied images.
+All images were captured from the running Vite application (`http://127.0.0.1:5200`) backed by the live `videod` instance (`http://127.0.0.1:18802`), using headless Chromium through the browser automation target with `page.setViewport` and `page.screenshot`. They are not placeholder images, screenshots of a different project, or copied images.
 
-Capture requirements: `POCKET_YOUTUBE_API=http://127.0.0.1:18763 npx vite --host 127.0.0.1 --port 5198 --strictPort`, then a headless Chromium navigation to the corresponding URL followed by `page.screenshot({path})`. The URL carries theme/language/profile/DPI (`?theme=dark&lang=en&profile=desktop&scale=100#home`), so each capture is reproducible. Data loads from the live seeded SQLite DB.
+Capture requirements: `POCKET_YOUTUBE_API=http://127.0.0.1:18802 npx vite --host 127.0.0.1 --port 5200 --strictPort`, then a headless Chromium navigation to the corresponding URL followed by `page.screenshot({path})`. The URL carries theme/language/profile/DPI (`?theme=dark&lang=en&profile=desktop&scale=100#home`), so each capture is reproducible. Data loads from the live seeded SQLite DB.
 
 Verification: all 28 PNGs were checked by reading the PNG IHDR (`width`, `height`), and SHA-256 hashes were compared. Result: **28 files / 28 unique hashes**. Any capture sharing the exact configuration and page state with another was omitted rather than saved as a duplicate; e.g. `home.png` is the en / DPI 100 / 1280×720 dark Home capture; the separate 1280×720 viewport capture uses the Downloads page to avoid identical bytes.
 
@@ -14,12 +14,12 @@ Verification: all 28 PNGs were checked by reading the PNG IHDR (`width`, `height
 | `dpi-150.png` | 1280×720 | Dark | Home / Desktop | 1.5× DPI. |
 | `dpi-200.png` | 1280×720 | Dark | Home / Desktop | 2× DPI. |
 | `dpi-300.png` | 1280×720 | Dark | Home / Desktop | 3× DPI. |
-| `history.png` | 1280×720 | Dark | History / Desktop | Seeded watch history. |
+| `history.png` | 1280×720 | Dark | History / Desktop | Per-video completion percentage, watched/total seconds and resume-enabled play button. |
 | `home.png` | 1280×720 | Dark | Home / Desktop | Six home sections with live seeded data. |
 | `library.png` | 1280×720 | Dark | Library / Desktop | Offline library empty state (fixtures have no files). |
 | `locale-ja.png` | 1280×720 | Dark | Home / Desktop | Japanese UI. |
 | `locale-zh-CN.png` | 1280×720 | Dark | Home / Desktop | Simplified Chinese UI. |
-| `playlists.png` | 1280×720 | Dark | Playlists / Desktop | 20 seeded playlists. |
+| `playlists.png` | 1280×720 | Dark | Playlists / Desktop | 20 synced playlists, create form and clickable detail cards. |
 | `profile-desktop.png` | 480×320 | Dark | Watch later / Desktop | Desktop profile at 480×320. |
 | `profile-handheld.png` | 480×320 | Dark | Home / Handheld | Handheld density/navigation profile. |
 | `profile-tv.png` | 480×320 | Dark | Home / TV | TV text/nav scaling. |
