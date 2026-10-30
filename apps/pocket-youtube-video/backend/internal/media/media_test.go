@@ -19,7 +19,7 @@ func TestStubDownloadRunsThroughQueue(t *testing.T) {
 	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho '[download] 12.5% of 8.00MiB at 1MiB/s'\necho '{\"title\":\"stub\"}'\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("sqlite", filepath.Join(dir, "test.db"))
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "test.db")+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestHeadlessMpvIPCCommands(t *testing.T) {
 	if _, err := exec.LookPath("mpv"); err != nil {
 		t.Skip("mpv unavailable")
 	}
-	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "test.db"))
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "test.db")+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestHeadlessMpvIPCCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	p, err := s.launch("av://lavfi:testsrc=size=64x64:rate=1")
+	p, err := s.launch("av://lavfi:testsrc=size=64x64:rate=1", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

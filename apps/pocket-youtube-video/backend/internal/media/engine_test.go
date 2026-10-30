@@ -20,7 +20,7 @@ func engineFixture(t *testing.T, script string) (*Service, *sql.DB, string) {
 	if err := os.WriteFile(stub, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("sqlite", filepath.Join(dir, "test.db"))
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "test.db")+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		t.Fatal(err)
 	}

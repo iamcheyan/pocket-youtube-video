@@ -188,6 +188,8 @@ func (s *Service) finish(j *job, state string, err error) {
 	s.kick()
 }
 func (s *Service) persistLocked(j *job) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	_, err := s.db.Exec(`UPDATE downloads SET state=?,progress=?,error=?,output_path=? WHERE id=? AND account_id=?`, j.State, j.Progress, j.Error, j.OutputPath, j.ID, j.AccountID)
 	return err
 }

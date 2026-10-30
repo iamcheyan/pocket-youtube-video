@@ -1,72 +1,143 @@
 package media
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/iamcheyan/pocket-youtube-video/apps/pocket-youtube-video/backend/internal/store"
 )
 
+type historyEntry struct {
+	VideoID           string  `json:"id"`
+	VideoIDAlias      string  `json:"video_id"`
+	Title             string  `json:"title"`
+	ChannelID         string  `json:"channel_id"`
+	Thumbnail         string  `json:"thumbnail"`
+	DurationSec       float64 `json:"duration_sec"`
+	Duration          int     `json:"duration"`
+	PositionSec       float64 `json:"position_sec"`
+	WatchedSec        float64 `json:"watched_sec"`
+	CompletionPercent float64 `json:"completion_percent"`
+	LastWatchedAt     string  `json:"watched_at"`
+}
+
+// history serves watch history, progress updates and resume positions.
+// GET /api/history, POST /api/history, POST /api/history/progress,
+// DELETE /api/history (clear all), DELETE /api/history/{video_id}.
 func (s *Service) history(w http.ResponseWriter, r *http.Request) {
 	account, err := store.ActiveAccount(r.Context(), s.db)
 	if err != nil {
-		apiError(w, 500, "account_unavailable", "active account unavailable")
+		apiError(w, http.StatusInternalServerError, "account_unavailable", "active account unavailable")
 		return
 	}
-	if r.Method == http.MethodDelete {
-		if _, err = s.db.ExecContext(r.Context(), `DELETE FROM history WHERE account_id=?`, account); err != nil {
-			apiError(w, 500, "database_error", "unable to clear history")
+	pathID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/history"), "/")
+	switch r.Method {
+	case http.MethodDelete:
+		if pathID == "" || pathID == "progress" {
+			if _, err = s.db.ExecContext(r.Context(), `DELETE FROM history WHERE account_id=?`, account); err != nil {
+				apiError(w, http.StatusInternalServerError, "database_error", "unable to clear history")
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		res, err := s.db.ExecContext(r.Context(), `DELETE FROM history WHERE account_id=? AND video_id=?`, account, pathID)
+		if err != nil {
+			apiError(w, http.StatusInternalServerError, "database_error", "unable to remove history entry")
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			apiError(w, http.StatusNotFound, "history_not_found", "history entry not found")
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	if r.Method == http.MethodPost {
+	case http.MethodPost:
 		var in struct {
 			VideoID  string  `json:"video_id"`
 			Position float64 `json:"position_sec"`
 			Duration float64 `json:"duration_sec"`
 		}
 		if decodeJSON(r, &in) != nil || in.VideoID == "" {
-			apiError(w, 400, "invalid_request", "video_id and progress are required")
+			apiError(w, http.StatusBadRequest, "invalid_request", "video_id and progress are required")
 			return
 		}
-		res, err := s.db.ExecContext(r.Context(), `INSERT INTO history(account_id,video_id,watched_at,position) SELECT ?,id,CURRENT_TIMESTAMP,? FROM videos WHERE id=? AND account_id=? ON CONFLICT(account_id,video_id) DO UPDATE SET watched_at=CURRENT_TIMESTAMP,position=excluded.position`, account, in.Position, in.VideoID, account)
+		if in.Position < 0 {
+			apiError(w, http.StatusBadRequest, "invalid_request", "position_sec must not be negative")
+			return
+		}
+		res, err := s.db.ExecContext(r.Context(), `INSERT INTO history(account_id,video_id,watched_at,position,duration)
+			SELECT ?,id,CURRENT_TIMESTAMP,?,MAX(?,duration) FROM videos WHERE id=? AND account_id=?
+			ON CONFLICT(account_id,video_id) DO UPDATE SET
+				watched_at=CURRENT_TIMESTAMP,
+				position=excluded.position,
+				duration=CASE WHEN excluded.duration>history.duration THEN excluded.duration ELSE history.duration END`,
+			account, in.Position, int64(in.Duration), in.VideoID, account)
 		if err != nil {
-			apiError(w, 500, "database_error", "unable to save history")
+			apiError(w, http.StatusInternalServerError, "database_error", "unable to save history")
 			return
 		}
-		n, _ := res.RowsAffected()
-		if n == 0 {
-			apiError(w, 404, "video_not_found", "video not found")
+		if n, _ := res.RowsAffected(); n == 0 {
+			apiError(w, http.StatusNotFound, "video_not_found", "video not found")
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	rows, err := s.db.QueryContext(r.Context(), `SELECT h.video_id,h.watched_at,h.position,v.duration FROM history h JOIN videos v ON v.id=h.video_id AND v.account_id=h.account_id WHERE h.account_id=? ORDER BY h.watched_at DESC`, account)
-	if err != nil {
-		apiError(w, 500, "database_error", "unable to read history")
-		return
-	}
-	defer rows.Close()
-	type entry struct {
-		VideoID   string  `json:"video_id"`
-		WatchedAt string  `json:"watched_at"`
-		Position  float64 `json:"position_sec"`
-		Duration  float64 `json:"duration_sec"`
-		Percent   float64 `json:"completion_percent"`
-	}
-	out := []entry{}
-	for rows.Next() {
-		var x entry
-		if err := rows.Scan(&x.VideoID, &x.WatchedAt, &x.Position, &x.Duration); err != nil {
-			apiError(w, 500, "database_error", "unable to read history")
+	case http.MethodGet:
+		out, err := s.historyEntries(r, account)
+		if err != nil {
+			apiError(w, http.StatusInternalServerError, "database_error", "unable to read history")
 			return
 		}
-		if x.Duration > 0 {
-			x.Percent = x.Position / x.Duration * 100
+		writeJSON(w, http.StatusOK, out)
+	default:
+		apiError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+	}
+}
+
+func (s *Service) historyEntries(r *http.Request, account string) ([]historyEntry, error) {
+	rows, err := s.db.QueryContext(r.Context(), `SELECT h.video_id,h.watched_at,h.position,v.title,v.channel_id,v.thumbnail,
+		CASE WHEN h.duration>0 THEN h.duration ELSE v.duration END
+		FROM history h JOIN videos v ON v.id=h.video_id AND v.account_id=h.account_id
+		WHERE h.account_id=? ORDER BY h.watched_at DESC, h.video_id`, account)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []historyEntry{}
+	for rows.Next() {
+		var x historyEntry
+		var duration float64
+		if err := rows.Scan(&x.VideoID, &x.LastWatchedAt, &x.PositionSec, &x.Title, &x.ChannelID, &x.Thumbnail, &duration); err != nil {
+			return nil, err
+		}
+		x.VideoIDAlias = x.VideoID
+		x.Duration = int(duration)
+		x.DurationSec = duration
+		x.WatchedSec = x.PositionSec
+		if x.DurationSec > 0 {
+			x.CompletionPercent = x.PositionSec / x.DurationSec * 100
+			if x.CompletionPercent > 100 {
+				x.CompletionPercent = 100
+			}
 		}
 		out = append(out, x)
 	}
-	writeJSON(w, 200, out)
+	return out, rows.Err()
+}
+
+// resumePosition returns the stored position for a video, or zero.
+func (s *Service) resumePosition(account, videoID string) float64 {
+	if videoID == "" {
+		return 0
+	}
+	var pos float64
+	err := s.db.QueryRow(`SELECT position FROM history WHERE account_id=? AND video_id=?`, account, videoID).Scan(&pos)
+	if errors.Is(err, sql.ErrNoRows) || err != nil {
+		return 0
+	}
+	if pos < 0 {
+		return 0
+	}
+	return pos
 }

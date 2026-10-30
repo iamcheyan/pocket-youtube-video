@@ -29,6 +29,7 @@ type Service struct {
 	db             *sql.DB
 	cfg            Config
 	mu             sync.Mutex
+	writeMu        sync.Mutex
 	jobs           map[int64]*job
 	players        map[string]*player
 	paused, closed bool
@@ -152,6 +153,7 @@ func RegisterRoutes(mux *http.ServeMux, s *Service) {
 	mux.HandleFunc("DELETE /api/library/{video_id}", s.deleteLibraryVideo)
 	mux.HandleFunc("GET /api/media/{video_id}", s.mediaStream)
 	mux.HandleFunc("/api/history", s.history)
+	mux.HandleFunc("/api/history/", s.history)
 }
 
 func (s *Service) downloads(w http.ResponseWriter, r *http.Request) {
@@ -184,12 +186,13 @@ func (s *Service) downloads(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, out)
 	case http.MethodPost:
 		var in struct {
-			VideoID      string `json:"video_id"`
-			URL          string `json:"url"`
-			Mode         string `json:"mode"`
-			Quality      string `json:"quality"`
-			AudioBitrate string `json:"audio_bitrate"`
-			Priority     int    `json:"priority"`
+			VideoID      string   `json:"video_id"`
+			VideoIDs     []string `json:"video_ids"`
+			URL          string   `json:"url"`
+			Mode         string   `json:"mode"`
+			Quality      string   `json:"quality"`
+			AudioBitrate string   `json:"audio_bitrate"`
+			Priority     int      `json:"priority"`
 		}
 		if decodeJSON(r, &in) != nil {
 			apiError(w, 400, "invalid_request", "invalid download request")
@@ -212,6 +215,10 @@ func (s *Service) downloads(w http.ResponseWriter, r *http.Request) {
 			apiError(w, 400, "invalid_options", "unsupported mode, quality, or audio bitrate")
 			return
 		}
+		if len(in.VideoIDs) > 0 {
+			s.enqueueBatch(w, r, account, in.VideoIDs, in.Mode, in.Quality, in.AudioBitrate, in.Priority)
+			return
+		}
 		if in.URL == "" {
 			if in.VideoID == "" {
 				apiError(w, 400, "video_required", "video_id is required")
@@ -230,21 +237,67 @@ func (s *Service) downloads(w http.ResponseWriter, r *http.Request) {
 		if in.VideoID == "" {
 			in.VideoID = mediaIDFromURL(in.URL)
 		}
-		res, err := s.db.ExecContext(r.Context(), `INSERT INTO downloads(account_id,video_id,url,mode,quality,audio_bitrate,priority) VALUES(?,?,?,?,?,?,?)`, account, in.VideoID, in.URL, in.Mode, in.Quality, in.AudioBitrate, in.Priority)
-		if err != nil {
-			apiError(w, 500, "database_error", "unable to queue download")
+		j, status, code, message := s.enqueue(account, in.VideoID, in.URL, in.Mode, in.Quality, in.AudioBitrate, in.Priority)
+		if status != http.StatusAccepted {
+			apiError(w, status, code, message)
 			return
 		}
-		id, _ := res.LastInsertId()
-		j := &job{ID: id, AccountID: account, VideoID: in.VideoID, URL: in.URL, Mode: in.Mode, Quality: in.Quality, AudioBitrate: in.AudioBitrate, Priority: in.Priority, State: "queued"}
-		s.mu.Lock()
-		s.jobs[id] = j
-		s.mu.Unlock()
 		s.kick()
 		writeJSON(w, http.StatusAccepted, j)
 	default:
 		apiError(w, 405, "method_not_allowed", "method not allowed")
 	}
+}
+
+// enqueue persists one queued download row and registers it in memory.
+func (s *Service) enqueue(account, videoID, videoURL, mode, quality, bitrate string, priority int) (*job, int, string, string) {
+	if videoURL == "" {
+		return nil, 400, "video_required", "video_id is required"
+	}
+	s.writeMu.Lock()
+	res, err := s.db.ExecContext(context.Background(), `INSERT INTO downloads(account_id,video_id,url,mode,quality,audio_bitrate,priority) VALUES(?,?,?,?,?,?,?)`, account, videoID, videoURL, mode, quality, bitrate, priority)
+	s.writeMu.Unlock()
+	if err != nil {
+		return nil, 500, "database_error", "unable to queue download"
+	}
+	id, _ := res.LastInsertId()
+	j := &job{ID: id, AccountID: account, VideoID: videoID, URL: videoURL, Mode: mode, Quality: quality, AudioBitrate: bitrate, Priority: priority, State: "queued"}
+	s.mu.Lock()
+	s.jobs[id] = j
+	s.mu.Unlock()
+	return j, http.StatusAccepted, "", ""
+}
+
+// enqueueBatch queues several videos at once, reporting per-video outcomes.
+func (s *Service) enqueueBatch(w http.ResponseWriter, r *http.Request, account string, videoIDs []string, mode, quality, bitrate string, priority int) {
+	type result struct {
+		VideoID string `json:"video_id"`
+		ID      int64  `json:"id,omitempty"`
+		State   string `json:"state,omitempty"`
+		Error   string `json:"error,omitempty"`
+	}
+	results := make([]result, 0, len(videoIDs))
+	queued := 0
+	for i, vid := range videoIDs {
+		var videoURL string
+		if err := s.db.QueryRowContext(r.Context(), `SELECT url FROM videos WHERE id=? AND account_id=?`, vid, account).Scan(&videoURL); err != nil {
+			results = append(results, result{VideoID: vid, Error: "video_not_found"})
+			continue
+		}
+		j, status, _, message := s.enqueue(account, vid, videoURL, mode, quality, bitrate, priority-i)
+		if status != http.StatusAccepted {
+			results = append(results, result{VideoID: vid, Error: message})
+			continue
+		}
+		queued++
+		results = append(results, result{VideoID: vid, ID: j.ID, State: j.State})
+	}
+	s.kick()
+	if queued == 0 {
+		apiError(w, http.StatusBadRequest, "batch_rejected", "no videos could be queued")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"queued": queued, "results": results})
 }
 
 func (s *Service) Close() {

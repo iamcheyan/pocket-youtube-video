@@ -33,19 +33,23 @@ func (s *Service) playerAction(w http.ResponseWriter, r *http.Request) {
 			apiError(w, 400, "invalid_request", "video_id or url required")
 			return
 		}
+		account, accountErr := store.ActiveAccount(r.Context(), s.db)
+		if accountErr != nil {
+			apiError(w, 500, "account_unavailable", "active account unavailable")
+			return
+		}
 		if in.URL == "" {
-			account, err := store.ActiveAccount(r.Context(), s.db)
-			if err != nil {
-				apiError(w, 500, "account_unavailable", "active account unavailable")
+			if in.VideoID == "" {
+				apiError(w, 400, "invalid_request", "video_id or url required")
 				return
 			}
-			err = s.db.QueryRowContext(r.Context(), `SELECT url FROM videos WHERE id=? AND account_id=?`, in.VideoID, account).Scan(&in.URL)
-			if err != nil {
+			if err := s.db.QueryRowContext(r.Context(), `SELECT url FROM videos WHERE id=? AND account_id=?`, in.VideoID, account).Scan(&in.URL); err != nil {
 				apiError(w, 404, "video_not_found", "video not found")
 				return
 			}
 		}
-		p, err := s.launch(in.URL)
+		resume := s.resumePosition(account, in.VideoID)
+		p, err := s.launch(in.URL, resume)
 		if err != nil {
 			apiError(w, 503, "player_unavailable", "unable to start mpv")
 			return
@@ -57,7 +61,7 @@ func (s *Service) playerAction(w http.ResponseWriter, r *http.Request) {
 		}
 		s.players["current"] = p
 		s.mu.Unlock()
-		writeJSON(w, http.StatusAccepted, map[string]any{"state": "playing", "video_id": in.VideoID})
+		writeJSON(w, http.StatusAccepted, map[string]any{"state": "playing", "video_id": in.VideoID, "resume_sec": resume})
 		return
 	}
 	s.mu.Lock()
@@ -115,13 +119,17 @@ func (s *Service) playerState(w http.ResponseWriter, r *http.Request) {
 	props["state"] = "playing"
 	writeJSON(w, 200, props)
 }
-func (s *Service) launch(url string) (*player, error) {
+func (s *Service) launch(url string, resumeSec float64) (*player, error) {
 	exe, err := exec.LookPath(s.cfg.MpvPath)
 	if err != nil {
 		return nil, err
 	}
 	sock := filepath.Join(s.cfg.IPCDir, fmt.Sprintf("pocket-mpv-%d.sock", time.Now().UnixNano()))
-	args := []string{"--no-config", "--no-terminal", "--vo=null", "--ao=null", "--idle=no", "--input-ipc-server=" + sock, url}
+	args := []string{"--no-config", "--no-terminal", "--vo=null", "--ao=null", "--idle=no", "--input-ipc-server=" + sock}
+	if resumeSec > 0 {
+		args = append(args, fmt.Sprintf("--start=%.3f", resumeSec))
+	}
+	args = append(args, url)
 	cmd := exec.Command(exe, args...)
 	cmd.Env = append(os.Environ(), "DISPLAY=", "WAYLAND_DISPLAY=")
 	if err = cmd.Start(); err != nil {

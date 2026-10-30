@@ -218,3 +218,90 @@ func TestSettingsExposeDefaultsValidateAndApply(t *testing.T) {
 		t.Fatalf("concurrency=%d", got)
 	}
 }
+
+func TestHistoryProgressPercentAndResume(t *testing.T) {
+	s, db, _ := engineFixture(t, "#!/bin/sh\nexit 0\n")
+	if _, err := db.Exec(`CREATE TABLE videos(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, channel_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', thumbnail TEXT NOT NULL DEFAULT '', duration INTEGER NOT NULL DEFAULT 0, published_at TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT ''); CREATE TABLE history(account_id TEXT NOT NULL,video_id TEXT NOT NULL,watched_at TEXT NOT NULL,position REAL NOT NULL DEFAULT 0,duration REAL NOT NULL DEFAULT 0,PRIMARY KEY(account_id,video_id)); INSERT INTO videos(id,account_id,title,url,duration) VALUES('video-0100','demo','Demo Video 0100','https://example.test/watch/video-0100',600);`); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, s)
+	body := `{"video_id":"video-0100","position_sec":150,"duration_sec":600}`
+	req := httptest.NewRequest(http.MethodPost, "/api/history/progress", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("progress status %d: %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/history", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status %d", rec.Code)
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("history entries=%d", len(items))
+	}
+	if pct := items[0]["completion_percent"].(float64); pct != 25 {
+		t.Fatalf("completion_percent=%v", pct)
+	}
+	if pos := items[0]["position_sec"].(float64); pos != 150 {
+		t.Fatalf("position_sec=%v", pos)
+	}
+	if s.resumePosition("demo", "video-0100") != 150 {
+		t.Fatalf("resume position not read")
+	}
+	// Older per-video add endpoint keeps working for API compatibility.
+	req = httptest.NewRequest(http.MethodDelete, "/api/history/video-0100", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status %d", rec.Code)
+	}
+	if s.resumePosition("demo", "video-0100") != 0 {
+		t.Fatalf("resume position should reset after delete")
+	}
+}
+
+func TestBatchDownloadQueuesEachVideo(t *testing.T) {
+	s, db, _ := engineFixture(t, "#!/bin/sh\nexit 0\n")
+	if _, err := db.Exec(`CREATE TABLE videos(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, channel_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', thumbnail TEXT NOT NULL DEFAULT '', duration INTEGER NOT NULL DEFAULT 0, published_at TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '');
+		INSERT INTO videos(id,account_id,title,url) VALUES('video-0201','demo','A','https://example.invalid/a'),('video-0202','demo','B','https://example.invalid/b');`); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, s)
+	req := httptest.NewRequest(http.MethodPost, "/api/downloads", strings.NewReader(`{"video_ids":["video-0201","video-0202","video-9999"],"mode":"audio","quality":"720p","audio_bitrate":"320"}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("batch status %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Queued  int `json:"queued"`
+		Results []struct {
+			VideoID string `json:"video_id"`
+			Error   string `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Queued != 2 || len(body.Results) != 3 {
+		t.Fatalf("queued=%d results=%+v", body.Queued, body.Results)
+	}
+	if body.Results[2].Error != "video_not_found" {
+		t.Fatalf("missing failure reported: %+v", body.Results[2])
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM downloads WHERE account_id='demo' AND mode='audio' AND audio_bitrate='320'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("persisted downloads=%d want 2", count)
+	}
+}
