@@ -1,8 +1,8 @@
 # Verification — pocket-youtube-video @ 2026-10-31
 
 - Verdict: PASS
-- Commit: `__COMMIT__` (layout/favicon fixes + screenshots; this document is the following commit)
-- Remote: `__REMOTE__`
+- Commit: `b845f67fb16ec098be99a98454033856498dc4a8` (layout/favicon fixes + screenshots; this document is the following commit)
+- Remote: `b845f67fb16ec098be99a98454033856498dc4a8`
 - Runtime: `videod` on `127.0.0.1:8732` (mock seeded SQLite, temp data dir) + Vite on `127.0.0.1:5202`; `make build` production bundle
 - Toolchain: go 1.26.0, node v22.23.3, Chrome 155.0.8059.84, yt-dlp/mpv/ffmpeg present
 
