@@ -1,0 +1,150 @@
+package auth
+
+import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/binary"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+type Secret struct {
+	AccessToken  string    `json:"-"`
+	RefreshToken string    `json:"-"`
+	Cookie       string    `json:"-"`
+	ExpiresAt    time.Time `json:"-"`
+}
+type Ciphertext struct {
+	Nonce []byte
+	Data  []byte
+}
+type CredentialStore interface {
+	Seal(accountID string, secret Secret) (Ciphertext, error)
+	Open(accountID string, ciphertext Ciphertext) (Secret, error)
+}
+type FileCredentialStore struct{ aead cipher.AEAD }
+
+func NewFileCredentialStore(keyPath string) (*FileCredentialStore, error) {
+	if keyPath == "" {
+		keyPath = os.Getenv("POCKET_YOUTUBE_AUTH_KEY")
+	}
+	if keyPath == "" {
+		return nil, errors.New("credential key path is not configured")
+	}
+	key, err := loadOrCreateKey(keyPath)
+	if err != nil {
+		return nil, errors.New("unable to initialize credential encryption")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, errors.New("unable to initialize credential encryption")
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, errors.New("unable to initialize credential encryption")
+	}
+	return &FileCredentialStore{aead: aead}, nil
+}
+func loadOrCreateKey(path string) ([]byte, error) {
+	if key, err := os.ReadFile(path); err == nil {
+		info, e := os.Stat(path)
+		if e != nil || len(key) != 32 || info.Mode().Perm()&0077 != 0 {
+			return nil, errors.New("invalid or insecure key")
+		}
+		return key, nil
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, err
+	}
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		if os.IsExist(err) {
+			return loadOrCreateKey(path)
+		}
+		return nil, err
+	}
+	_, we := f.Write(key)
+	ce := f.Close()
+	if we != nil {
+		_ = os.Remove(path)
+		return nil, we
+	}
+	if ce != nil {
+		return nil, ce
+	}
+	return key, nil
+}
+func (s *FileCredentialStore) Seal(id string, v Secret) (Ciphertext, error) {
+	p := encodeSecret(v)
+	nonce := make([]byte, s.aead.NonceSize())
+	if _, e := io.ReadFull(rand.Reader, nonce); e != nil {
+		clear(p)
+		return Ciphertext{}, errors.New("unable to encrypt credentials")
+	}
+	data := s.aead.Seal(nil, nonce, p, []byte(id))
+	clear(p)
+	return Ciphertext{Nonce: nonce, Data: data}, nil
+}
+func (s *FileCredentialStore) Open(id string, c Ciphertext) (Secret, error) {
+	p, e := s.aead.Open(nil, c.Nonce, c.Data, []byte(id))
+	if e != nil {
+		return Secret{}, errors.New("unable to decrypt credentials")
+	}
+	defer clear(p)
+	return decodeSecret(p)
+}
+func encodeSecret(s Secret) []byte {
+	fields := []string{s.AccessToken, s.RefreshToken, s.Cookie}
+	n := 12
+	for _, v := range fields {
+		n += 4 + len(v)
+	}
+	out := make([]byte, 0, n)
+	for _, v := range fields {
+		var size [4]byte
+		binary.BigEndian.PutUint32(size[:], uint32(len(v)))
+		out = append(out, size[:]...)
+		out = append(out, v...)
+	}
+	var expiry [12]byte
+	if !s.ExpiresAt.IsZero() {
+		binary.BigEndian.PutUint64(expiry[:8], uint64(s.ExpiresAt.Unix()))
+		binary.BigEndian.PutUint32(expiry[8:], uint32(s.ExpiresAt.Nanosecond()))
+	}
+	return append(out, expiry[:]...)
+}
+func decodeSecret(b []byte) (Secret, error) {
+	values := make([]string, 0, 3)
+	for range 3 {
+		if len(b) < 4 {
+			return Secret{}, errors.New("invalid credential payload")
+		}
+		n := int(binary.BigEndian.Uint32(b))
+		b = b[4:]
+		if len(b) < n {
+			return Secret{}, errors.New("invalid credential payload")
+		}
+		values = append(values, string(b[:n]))
+		b = b[n:]
+	}
+	if len(b) != 12 {
+		return Secret{}, errors.New("invalid credential payload")
+	}
+	sec := int64(binary.BigEndian.Uint64(b[:8]))
+	ns := int64(binary.BigEndian.Uint32(b[8:]))
+	var expiry time.Time
+	if sec != 0 || ns != 0 {
+		expiry = time.Unix(sec, ns).UTC()
+	}
+	return Secret{AccessToken: values[0], RefreshToken: values[1], Cookie: values[2], ExpiresAt: expiry}, nil
+}
