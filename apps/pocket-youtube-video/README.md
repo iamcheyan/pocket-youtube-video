@@ -14,10 +14,12 @@ make dev
 
 The API listens on `127.0.0.1:8732`; the Vite dev UI uses its default port. Set `POCKET_YOUTUBE_DATA_DIR` to choose the private data directory. Set `POCKET_YOUTUBE_ADDR` to change the bind address. `POCKET_YOUTUBE_SEED=0` disables deterministic demo seeding.
 
-## Mock mode and current limits
+## Mock mode and verification status
 
-The demo account and seeded catalogue work without credentials. Current measured seed is 100 channels, 1000 videos, 20 playlists, 50 watch-later entries and 25 history entries; 50 sample download queue rows are also inserted as non-media fixture states. These rows do not contain downloaded files. Health reports authentication as `not_configured` unless a non-demo account has been added.
+The demo account and seeded catalogue work without credentials. Measured from a clean database after two cold starts: 100 channels, 1000 videos, 20 playlists, 50 watch-later entries, 25 history entries, plus 50 download-fixture rows. Seeding is idempotent. Fixture `completed` rows deliberately have no media files and are not listed in the offline library.
 
-OAuth PKCE and cookie import use encrypted local storage. Actual Google OAuth was not exercised because this machine has no credentials. YouTube network access and real download outcomes are not asserted. Headless mpv uses null audio/video outputs; its control IPC can be tested, but visual and audible playback cannot be verified here.
+OAuth PKCE, cookie import and AES-256-GCM credential storage are implemented; health reports `not_configured` when no non-demo authenticated account exists. **Real Google authorization and authenticated YouTube sync were not exercised** (no client credentials/account). A public, brief YouTube sample was, however, downloaded successfully through `videod` (state `completed`, 100%, ~25 MB webm), served over HTTP Range (`206`, 1024 bytes), listed in the library, deleted, and played through mpv IPC (`duration`, `pause`, `volume`, `speed`, `seek` verified). Network availability is not guaranteed for future runs.
+
+Headless mpv uses `--vo=null --ao=null`: control and state are verified, but **rendered pixels and audible output are not**. See [DEPENDENCIES.md](docs/DEPENDENCIES.md) for exact versions and [SCREENSHOTS.md](docs/SCREENSHOTS.md) for the 28 real Chromium captures.
 
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [API.md](docs/API.md), [AUTH.md](docs/AUTH.md), [DATABASE.md](docs/DATABASE.md), [DEPENDENCIES.md](docs/DEPENDENCIES.md) and [ROADMAP.md](docs/ROADMAP.md).
