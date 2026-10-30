@@ -333,23 +333,85 @@ func (h *Handler) historyDelete(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	kind := r.URL.Query().Get("type")
+	if kind == "" {
+		kind = "video"
+	}
 	if q == "" {
-		jsonOut(w, []videoRow{})
+		jsonOut(w, []map[string]any{})
 		return
 	}
+	if kind != "video" && kind != "channel" && kind != "playlist" && kind != "library" {
+		fail(w, 400, "invalid_search_type")
+		return
+	}
+	account := h.account(r)
 	l, o := paging(r)
-	rows, e := h.DB.QueryContext(r.Context(), `SELECT `+videoCols+` FROM video_search s JOIN videos v ON v.id=s.video_id AND v.account_id=s.account_id WHERE s.account_id=? AND video_search MATCH ? ORDER BY rank LIMIT ? OFFSET ?`, h.account(r), q, l, o)
-	if e != nil {
-		fail(w, 400, "invalid search query")
-		return
+	out := []map[string]any{}
+	switch kind {
+	case "video":
+		rows, e := h.DB.QueryContext(r.Context(), `SELECT `+videoCols+` FROM video_search s JOIN videos v ON v.id=s.video_id AND v.account_id=s.account_id WHERE s.account_id=? AND video_search MATCH ? ORDER BY rank LIMIT ? OFFSET ?`, account, q, l, o)
+		if e != nil {
+			fail(w, 400, "invalid search query")
+			return
+		}
+		defer rows.Close()
+		v, e := scanVideos(rows)
+		if e != nil {
+			fail(w, 500, "database error")
+			return
+		}
+		for _, x := range v {
+			out = append(out, map[string]any{"type": "video", "id": x.ID, "title": x.Title, "thumbnail": x.Thumbnail, "duration": x.Duration, "channel_id": x.ChannelID})
+		}
+	case "channel":
+		rows, e := h.DB.QueryContext(r.Context(), `SELECT id,title,thumbnail FROM channels WHERE account_id=? AND title LIKE ? ORDER BY title LIMIT ? OFFSET ?`, account, "%"+q+"%", l, o)
+		if e != nil {
+			fail(w, 500, "database error")
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, title, thumb string
+			if e = rows.Scan(&id, &title, &thumb); e != nil {
+				fail(w, 500, "database error")
+				return
+			}
+			out = append(out, map[string]any{"type": "channel", "id": id, "title": title, "thumbnail": thumb})
+		}
+	case "playlist":
+		rows, e := h.DB.QueryContext(r.Context(), `SELECT id,title,description FROM playlists WHERE account_id=? AND title LIKE ? ORDER BY title LIMIT ? OFFSET ?`, account, "%"+q+"%", l, o)
+		if e != nil {
+			fail(w, 500, "database error")
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, title, desc string
+			if e = rows.Scan(&id, &title, &desc); e != nil {
+				fail(w, 500, "database error")
+				return
+			}
+			out = append(out, map[string]any{"type": "playlist", "id": id, "title": title, "description": desc})
+		}
+	case "library":
+		rows, e := h.DB.QueryContext(r.Context(), `SELECT v.id,v.title,v.thumbnail,v.duration FROM downloads d JOIN videos v ON v.id=d.video_id AND v.account_id=d.account_id WHERE d.account_id=? AND d.state='completed' AND d.output_path<>'' AND v.title LIKE ? ORDER BY v.title LIMIT ? OFFSET ?`, account, "%"+q+"%", l, o)
+		if e != nil {
+			fail(w, 500, "database error")
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, title, thumb string
+			var duration int
+			if e = rows.Scan(&id, &title, &thumb, &duration); e != nil {
+				fail(w, 500, "database error")
+				return
+			}
+			out = append(out, map[string]any{"type": "library", "id": id, "title": title, "thumbnail": thumb, "duration": duration})
+		}
 	}
-	defer rows.Close()
-	v, e := scanVideos(rows)
-	if e != nil {
-		fail(w, 500, "database error")
-		return
-	}
-	jsonOut(w, v)
+	jsonOut(w, out)
 }
 func (h *Handler) sync(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, map[string]any{"status": "queued", "account_id": h.account(r)})

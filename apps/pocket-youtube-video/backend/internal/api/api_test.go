@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -103,5 +104,28 @@ func TestUnknownVideoAndSearchErrors(t *testing.T) {
 	rec, _ = request(t, h, http.MethodGet, "/api/search?q=Demo+Video+0001", "")
 	if rec.Code != 200 {
 		t.Fatalf("search status %d", rec.Code)
+	}
+}
+
+func TestSearchSupportsEveryDocumentedType(t *testing.T) {
+	_, h := testServer(t)
+	cases := map[string]string{"video": "Demo Video 0001", "channel": "Demo Channel", "playlist": "Demo Playlist", "library": "Demo"}
+	for kind, q := range cases {
+		rec, body := request(t, h, http.MethodGet, "/api/search?type="+kind+"&q="+url.QueryEscape(q), "")
+		if rec.Code != 200 {
+			t.Fatalf("%s status %d", kind, rec.Code)
+		}
+		var items []any
+		if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		_ = body
+		if kind != "library" && len(items) == 0 {
+			t.Fatalf("%s returned no results", kind)
+		}
+	}
+	rec, _ := request(t, h, http.MethodGet, "/api/search?type=invalid&q=x", "")
+	if rec.Code != 400 {
+		t.Fatalf("invalid type status %d", rec.Code)
 	}
 }

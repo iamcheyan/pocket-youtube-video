@@ -15,7 +15,7 @@ Base path: `/api`. Requests and responses use JSON, except `/api/media/{video_id
 - `GET /subscriptions?page=1`, `GET /channels?q=`, `GET /channels/{id}`.
 - `GET /playlists?q=` (video counts and metadata). A dedicated `/api/playlists/{id}` detail/CRUD/import route is not implemented.
 - `GET /videos/{id}`.
-- `GET /search?q=&type=video|channel|playlist|library`.
+- `GET /search?q=&type=video|channel|playlist|library` (default `video`). Each item carries `type` plus id/title; `library` searches only completed downloads with a local file. An unknown type returns 400 `invalid_search_type`.
 - `GET /history`, `POST /history/progress` with `{video_id,position_sec,duration_sec}`.
 - `GET /watch_later`, `POST /watch_later/{video_id}`, `DELETE /watch_later/{video_id}`.
 - Favorites use corresponding `/favorites` routes.
