@@ -32,7 +32,7 @@ bun "$SDK/tools/pocket.ts" compile \
   --target rocknix-h700-kms --manifest pocket.json --output out.pocket
 ```
 
-Admission: `sha256:5b8aa7da08393f792f6fb584d36b45b8f64af23bf1bf9655e8b81e1fdbae056e`; TypeScript passes for the app module graph. Package: `out.pocket`, sha256 `8c458b1f4c3e3642e2b2bdc8e2dee40ff76e19d80b93ba3231f2fd6c212031b7`.
+Admission: `sha256:5b8aa7da08393f792f6fb584d36b45b8f64af23bf1bf9655e8b81e1fdbae056e`; TypeScript passes for the app module graph. Package: `out.pocket`, sha256 `cdfc32aed39c119d09792cecda730e08d373740e3dc4776ca7daece5edfc9168`.
 
 ## Frames
 

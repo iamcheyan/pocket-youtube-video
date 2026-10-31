@@ -1,0 +1,17 @@
+{
+  "app": "youtube-video",
+  "package_sha256": "cdfc32aed39c119d09792cecda730e08d373740e3dc4776ca7daece5edfc9168",
+  "launcher_before": "8782",
+  "launcher_after": "9577",
+  "boot_sha256": "6ed41612bce1723d1eda64b5a0ee9333a105ed498b7085c03267539cf6c1b32d",
+  "frames": [
+    "home",
+    "home-focus",
+    "detail",
+    "detail-action",
+    "settings",
+    "settings-toggled"
+  ],
+  "runtime": "/mnt/sdcard/System/pocketjs/bin/pocket-linux-kms",
+  "deploy": "/storage/pjs/pocket-youtube-video"
+}
